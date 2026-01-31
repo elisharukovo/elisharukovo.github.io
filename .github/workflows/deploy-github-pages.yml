@@ -44,6 +44,7 @@ jobs:
           publish_dir: ./
           # Keep the .nojekyll file to prevent GitHub from ignoring files starting with underscore
           enable_jekyll: false
+          exclude_assets: '' # This ensures config.js is NOT ignored
           
       - name: Deployment complete
         run: |
