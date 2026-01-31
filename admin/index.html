@@ -41,7 +41,7 @@
             console.error('Failed to initialize Supabase:', e);
         }
 
-        const ADMIN_PASSWORD = 'elisha2026';
+        const ADMIN_PASSWORD = window.ENV_CONFIG?.ADMIN_PASSWORD || '';
 
         // ===== STATE =====
         const state = {
