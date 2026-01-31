@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>We01 Beatz - Music Producer</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Load configuration from external file (not committed to git) -->
+    <script src="../config.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@300;400;700&display=swap');
+        
+        * {
+            font-family: 'Roboto', sans-serif;
+        }
+        
+        h1, h2, h3, .title-font {
+            font-family: 'Orbitron', sans-serif;
+        }
+        
+        @keyframes slide-in {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .animate-slide-in {
+            animation: slide-in 0.3s ease-out;
+        }
+
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in {
+            animation: fade-in 0.6s ease-out forwards;
+            animation-fill-mode: forwards;
+        }
+
+        .stagger-1 { animation-delay: 0.1s; opacity: 0; }
+        .stagger-2 { animation-delay: 0.2s; opacity: 0; }
+        .stagger-3 { animation-delay: 0.3s; opacity: 0; }
+        .stagger-4 { animation-delay: 0.4s; opacity: 0; }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+        }
+
+        .glow {
+            box-shadow: 0 0 20px rgba(0, 242, 254, 0.5);
+        }
+
+        /* Audio Player Styles */
+        .audio-player {
+            background: rgba(31, 41, 55, 0.9);
+            backdrop-filter: blur(10px);
+        }
+        
+        .progress-bar {
+            height: 4px;
+            background: #374151;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #06b6d4, #0891b2);
+            transition: width 0.1s linear;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 text-white min-h-screen">
+    <div id="app">
+        <div class="loading">
+            <div class="text-2xl">Loading beats...</div>
+        </div>
+    </div>
+
+    <!-- Audio Element (Hidden) -->
+    <audio id="audio-player" preload="metadata"></audio>
+
+    <script>
+        // Supabase Configuration
+        // Load Supabase configuration from external config file
+        const SUPABASE_URL = window.ENV_CONFIG?.SUPABASE_URL || '';
+        const SUPABASE_KEY = window.ENV_CONFIG?.SUPABASE_ANON_KEY || '';
+        
+        if (!SUPABASE_URL || !SUPABASE_KEY) {
+            console.error('⚠️ Missing Supabase configuration. Please create config.js from config.template.js');
+        }
+        
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // Audio Player
+        const audioPlayer = document.getElementById('audio-player');
+
+        // App State
+        const state = {
+            currentBeat: null,
+            isPlaying: false,
+            currentTime: 0,
+            duration: 0,
+            activeTab: 'beats',
+            cartItems: [],
+            showCart: false,
+            showBookingModal: false,
+            showNotification: false,
+            profile: null,
+            beats: [],
+            samplePacks: [],
+            placements: [],
+            testimonials: []
+        };
+
+        // Audio Player Events
+        audioPlayer.addEventListener('timeupdate', () => {
+            state.currentTime = audioPlayer.currentTime;
+            state.duration = audioPlayer.duration || 0;
+            updateProgressBar();
+        });
+
+        audioPlayer.addEventListener('ended', () => {
+            state.isPlaying = false;
+            state.currentTime = 0;
+            render();
+        });
+
+        audioPlayer.addEventListener('loadedmetadata', () => {
+            state.duration = audioPlayer.duration;
+            render();
+        });
+
+        function updateProgressBar() {
+            const progressFill = document.getElementById('progress-fill');
+            if (progressFill && state.duration > 0) {
+                const percentage = (state.currentTime / state.duration) * 100;
+                progressFill.style.width = percentage + '%';
+            }
+            
+            const currentTimeEl = document.getElementById('current-time');
+            const durationEl = document.getElementById('duration-time');
+            if (currentTimeEl) currentTimeEl.textContent = formatTime(state.currentTime);
+            if (durationEl) durationEl.textContent = formatTime(state.duration);
+        }
+
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return '0:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function seekAudio(event) {
+            const progressBar = event.currentTarget;
+            const rect = progressBar.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const percentage = x / rect.width;
+            const newTime = percentage * state.duration;
+            audioPlayer.currentTime = newTime;
+        }
+
+        // SVG Icons  
+        const icons = {
+            play: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>',
+            pause: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>',
+            cart: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>',
+            download: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-15"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
+            star: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>',
+            check: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+            x: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+            music: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>',
+            trophy: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg>',
+            user: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>',
+            package: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>',
+            home: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>',
+            calendar: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>',
+            skipNext: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>',
+            skipPrev: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>',
+        };
+
+        // Fetch data from Supabase
+        async function loadData() {
+            try {
+                const { data: profileData } = await supabaseClient.from('we01_profile').select('*').limit(1).single();
+                if (profileData) state.profile = profileData;
+
+                const { data: beatsData } = await supabaseClient.from('we01_beats').select('*').order('created_at', { ascending: false });
+                if (beatsData) state.beats = beatsData;
+
+                const { data: packsData } = await supabaseClient.from('we01_sample_packs').select('*').order('created_at', { ascending: false });
+                if (packsData) state.samplePacks = packsData;
+
+                const { data: placementsData } = await supabaseClient.from('we01_placements').select('*').order('streams', { ascending: false });
+                if (placementsData) state.placements = placementsData;
+
+                const { data: testimonialsData } = await supabaseClient.from('we01_testimonials').select('*').order('rating', { ascending: false });
+                if (testimonialsData) state.testimonials = testimonialsData;
+
+                render();
+            } catch (error) {
+                console.error('Error loading data:', error);
+                render();
+            }
+        }
+
+        function togglePlay(beat) {
+            if (state.currentBeat?.id === beat.id) {
+                if (state.isPlaying) {
+                    audioPlayer.pause();
+                    state.isPlaying = false;
+                } else {
+                    audioPlayer.play();
+                    state.isPlaying = true;
+                }
+            } else {
+                if (beat.preview_url) {
+                    state.currentBeat = beat;
+                    audioPlayer.src = beat.preview_url;
+                    audioPlayer.load();
+                    audioPlayer.play();
+                    state.isPlaying = true;
+                } else {
+                    showNotification('No preview available');
+                    return;
+                }
+            }
+            render();
+        }
+
+        function skipNext() {
+            const currentIndex = state.beats.findIndex(b => b.id === state.currentBeat?.id);
+            const nextBeat = state.beats[currentIndex + 1] || state.beats[0];
+            if (nextBeat) togglePlay(nextBeat);
+        }
+
+        function skipPrev() {
+            const currentIndex = state.beats.findIndex(b => b.id === state.currentBeat?.id);
+            const prevBeat = state.beats[currentIndex - 1] || state.beats[state.beats.length - 1];
+            if (prevBeat) togglePlay(prevBeat);
+        }
+
+        function addToCart(itemId, itemType) {
+            // Find the item
+            let item = null;
+            if (itemType === 'beat') {
+                item = state.beats.find(b => b.id === itemId);
+                if (item) item = { ...item, _type: 'beat', _label: 'Beat' };
+            } else if (itemType === 'pack') {
+                item = state.samplePacks.find(p => p.id === itemId);
+                if (item) item = { ...item, _type: 'pack', _label: 'Sample Pack' };
+            }
+            if (!item) return;
+
+            // Prevent duplicates
+            if (!state.cartItems.find(c => c.id === item.id && c._type === item._type)) {
+                state.cartItems.push(item);
+            }
+            showNotification('Added to cart!');
+            render();
+        }
+
+        function removeFromCart(idx) {
+            state.cartItems.splice(idx, 1);
+            render();
+        }
+
+        function getCartTotal() {
+            return state.cartItems.reduce((sum, item) => sum + (item.price || 0), 0).toFixed(2);
+        }
+
+        function toggleCartPanel() {
+            state.showCart = !state.showCart;
+            render();
+        }
+
+        function checkoutCart() {
+            if (state.cartItems.length === 0) return;
+            const profile = state.profile || {};
+            const email = profile.email || 'we01beatz@email.com';
+
+            let body = 'Hi,\n\nI am interested in purchasing the following items:\n\n';
+            state.cartItems.forEach((item, i) => {
+                const name = item.title || item.name || 'Untitled';
+                body += `${i + 1}. [${item._label}] ${name} – $${(item.price || 0).toFixed(2)}\n`;
+            });
+            body += `\nCart Total: $${getCartTotal()}\n`;
+            body += `\nPlease send me an invoice at your earliest convenience.\n\nThank you!`;
+
+            const subject = `We01 Beatz – Purchase Request (${state.cartItems.length} item${state.cartItems.length > 1 ? 's' : ''})`;
+
+            const mailto = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.open(mailto, '_blank');
+
+            showNotification('Opening your email client…');
+        }
+
+        function submitBookingRequest() {
+            const name = document.getElementById('booking-name')?.value || '';
+            const email = document.getElementById('booking-email')?.value || '';
+            const service = document.getElementById('booking-service')?.value || '';
+            const details = document.getElementById('booking-details')?.value || '';
+            const budget = document.getElementById('booking-budget')?.value || '';
+
+            if (!name || !email) {
+                showNotification('Please fill in your name and email');
+                return;
+            }
+
+            const profile = state.profile || {};
+            const producerEmail = profile.email || 'we01beatz@email.com';
+
+            let body = `New Production Request\n`;
+            body += `${'─'.repeat(30)}\n\n`;
+            body += `Name: ${name}\n`;
+            body += `Email: ${email}\n`;
+            body += `Service: ${service}\n`;
+            body += `Budget: ${budget || 'Not specified'}\n\n`;
+            body += `Project Details:\n${details || 'Not provided'}\n`;
+
+            const subject = `[We01 Beatz] Production Request – ${name}`;
+            const mailto = `mailto:${producerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.open(mailto, '_blank');
+
+            state.showBookingModal = false;
+            showNotification('Opening your email client…');
+        }
+
+        function setActiveTab(tab) {
+            state.activeTab = tab;
+            render();
+        }
+
+        function toggleBookingModal() {
+            state.showBookingModal = !state.showBookingModal;
+            render();
+        }
+
+        function showNotification(message) {
+            state.showNotification = message;
+            render();
+            setTimeout(() => {
+                state.showNotification = false;
+                render();
+            }, 3000);
+        }
+
+        function renderCartItem(item, idx) {
+            const img = item.cover || item.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=200&h=200&fit=crop';
+            const name = item.title || item.name || 'Untitled';
+            const meta = item._type === 'beat' && (item.bpm || item.key)
+                ? '<p class="text-xs text-gray-600 mt-0.5">' + (item.bpm || '') + (item.bpm && item.key ? ' &bull; ' : '') + (item.key || '') + '</p>'
+                : '';
+            return '<div class="bg-gray-800 rounded-xl p-4 flex items-start gap-4">'
+                + '<div class="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">'
+                + '<img src="' + img + '" alt="' + name + '" class="w-full h-full object-cover" />'
+                + '</div>'
+                + '<div class="flex-1 min-w-0">'
+                + '<h4 class="font-semibold truncate">' + name + '</h4>'
+                + '<p class="text-sm text-gray-500 capitalize">' + (item._label || '') + '</p>'
+                + meta
+                + '</div>'
+                + '<div class="text-right flex-shrink-0">'
+                + '<p class="text-cyan-400 font-bold">$' + (item.price || 0).toFixed(2) + '</p>'
+                + '<button onclick="removeFromCart(' + idx + ')" class="text-gray-600 hover:text-red-400 text-xs mt-1 transition-colors ml-auto block">'
+                + 'Remove'
+                + '</button>'
+                + '</div>'
+                + '</div>';
+        }
+
+        function renderCartPanel() {
+            const overlayClass = state.showCart ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none';
+            const panelClass = state.showCart ? 'translate-x-0' : 'translate-x-full';
+            const count = state.cartItems.length;
+            const badgeHtml = count > 0
+                ? '<span class="bg-cyan-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">' + count + '</span>'
+                : '';
+
+            let itemsHtml;
+            if (count === 0) {
+                itemsHtml = '<div class="text-center py-16">'
+                    + '<div class="text-gray-600 mb-4" style="font-size:3rem">' + icons.cart + '</div>'
+                    + '<p class="text-gray-500 text-lg">Your cart is empty</p>'
+                    + '<p class="text-gray-600 text-sm mt-1">Add some beats or sample packs to get started</p>'
+                    + '</div>';
+            } else {
+                itemsHtml = state.cartItems.map((item, idx) => renderCartItem(item, idx)).join('');
+            }
+
+            let footerHtml = '';
+            if (count > 0) {
+                footerHtml = '<div class="border-t border-gray-700 p-6">'
+                    + '<div class="flex justify-between items-center mb-4">'
+                    + '<span class="text-gray-400">Total (' + count + ' item' + (count > 1 ? 's' : '') + ')</span>'
+                    + '<span class="text-xl font-bold text-white">$' + getCartTotal() + '</span>'
+                    + '</div>'
+                    + '<button onclick="checkoutCart()" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 py-4 rounded-xl font-bold text-lg hover:scale-[1.02] transition-transform flex items-center justify-center gap-2 shadow-lg">'
+                    + icons.check + ' Checkout via Email'
+                    + '</button>'
+                    + '<p class="text-center text-xs text-gray-600 mt-3">You\'ll be redirected to your email client to complete the purchase</p>'
+                    + '</div>';
+            }
+
+            return '<div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 transition-opacity ' + overlayClass + '" onclick="toggleCartPanel()"></div>'
+                + '<div class="fixed top-0 right-0 h-full w-full max-w-md bg-gray-900 border-l border-gray-700 z-50 flex flex-col transition-transform duration-300 ease-out ' + panelClass + '">'
+                + '<div class="flex items-center justify-between p-6 border-b border-gray-700">'
+                + '<h2 class="text-xl font-bold flex items-center gap-2">' + icons.cart + '<span>Your Cart</span> ' + badgeHtml + '</h2>'
+                + '<button onclick="toggleCartPanel()" class="p-2 hover:bg-gray-800 rounded-full transition-colors text-gray-400 hover:text-white">' + icons.x + '</button>'
+                + '</div>'
+                + '<div class="flex-1 overflow-y-auto p-6 space-y-4">' + itemsHtml + '</div>'
+                + footerHtml
+                + '</div>';
+        }
+
+        function renderBookingModal() {
+            if (!state.showBookingModal) return '';
+            
+            return `
+                <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div class="bg-gray-900 border border-cyan-500/30 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div class="p-6 border-b border-gray-800 flex justify-between items-center sticky top-0 bg-gray-900">
+                            <h2 class="text-2xl font-bold title-font">Custom Production Request</h2>
+                            <button onclick="toggleBookingModal()" class="p-2 hover:bg-gray-800 rounded-lg">${icons.x}</button>
+                        </div>
+                        <div class="p-6 space-y-6">
+                            <div class="space-y-4">
+                                <input type="text" id="booking-name" placeholder="Your Name" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:border-cyan-500 focus:outline-none" />
+                                <input type="email" id="booking-email" placeholder="Email" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:border-cyan-500 focus:outline-none" />
+                                <select id="booking-service" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:border-cyan-500 focus:outline-none">
+                                    <option>Type of Service</option>
+                                    <option>Custom Beat</option>
+                                    <option>Exclusive License</option>
+                                    <option>Mixing & Mastering</option>
+                                    <option>Full Production</option>
+                                </select>
+                                <textarea id="booking-details" placeholder="Tell me about your project..." rows="4" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:border-cyan-500 focus:outline-none resize-none"></textarea>
+                                <input type="text" id="booking-budget" placeholder="Budget" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:border-cyan-500 focus:outline-none" />
+                            </div>
+                            <button onclick="submitBookingRequest()" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 py-4 rounded-lg font-semibold hover:scale-105 transition-transform">
+                                Submit Request
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderBeatsTab() {
+            return `
+                <div>
+                    <div class="flex justify-between items-center mb-8 flex-wrap gap-4">
+                        <div>
+                            <h2 class="text-4xl font-bold flex items-center gap-3 title-font">${icons.music} Beat Store</h2>
+                            <p class="text-gray-400 mt-2">Premium beats ready for your next hit</p>
+                        </div>
+                        <button onclick="toggleBookingModal()" class="text-cyan-400 hover:text-cyan-300 font-semibold">Need custom production? →</button>
+                    </div>
+                    ${state.beats.length > 0 ? `
+                        <div class="grid md:grid-cols-2 gap-6">
+                            ${state.beats.map((beat, idx) => `
+                                <div class="bg-gray-800/50 backdrop-blur rounded-xl overflow-hidden hover:bg-gray-800 transition-all group fade-in stagger-${(idx % 4) + 1} ${state.currentBeat?.id === beat.id ? 'ring-2 ring-cyan-500' : ''}">
+                                    <div class="relative">
+                                        <img src="${beat.cover}" alt="${beat.title}" class="w-full h-48 object-cover" />
+                                        <button onclick='togglePlay(${JSON.stringify(beat).replace(/'/g, "\\'")})'  class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <div class="w-16 h-16 text-cyan-400">${state.isPlaying && state.currentBeat?.id === beat.id ? icons.pause : icons.play}</div>
+                                        </button>
+                                        <div class="absolute top-3 right-3 bg-black/70 backdrop-blur px-3 py-1 rounded-full text-sm font-semibold">${beat.sold || 0} sold</div>
+                                    </div>
+                                    <div class="p-5">
+                                        <h3 class="text-xl font-bold mb-2">${beat.title}</h3>
+                                        <div class="flex gap-2 mb-3 flex-wrap">
+                                            ${beat.tags.split(',').map(tag => `<span class="bg-cyan-600/30 px-2 py-1 rounded text-xs">${tag.trim()}</span>`).join('')}
+                                        </div>
+                                        <div class="flex justify-between items-center text-sm text-gray-400 mb-4">
+                                            <span>${beat.bpm} BPM</span>
+                                            <span>Key: ${beat.key}</span>
+                                            <span>${beat.type}</span>
+                                        </div>
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-2xl font-bold text-cyan-400">$${beat.price}</span>
+                                            <button onclick="addToCart(${beat.id}, 'beat')" class="bg-gradient-to-r from-cyan-600 to-blue-600 px-6 py-3 rounded-lg font-semibold hover:scale-105 transition-transform flex items-center gap-2">
+                                                ${icons.cart} Add to Cart
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <div class="bg-gray-800/30 border-2 border-dashed border-gray-700 rounded-xl p-12 text-center">
+                            <div class="text-6xl mb-4">🎹</div>
+                            <h3 class="text-2xl font-bold mb-2">No beats available yet</h3>
+                            <p class="text-gray-400">Add your first beat in the Supabase dashboard (we01_beats table)</p>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderPacksTab() {
+            return `
+                <div>
+                    <h2 class="text-4xl font-bold mb-8 flex items-center gap-3 title-font">${icons.package} Sample Packs</h2>
+                    ${state.samplePacks.length > 0 ? `
+                        <div class="grid md:grid-cols-2 gap-6">
+                            ${state.samplePacks.map(pack => `
+                                <div class="bg-gradient-to-r from-cyan-900/30 to-blue-900/30 border border-cyan-500/30 rounded-xl p-6 hover:scale-105 transition-transform">
+                                    <div class="flex gap-4 items-start">
+                                        <img src="${pack.cover}" alt="${pack.name}" class="w-24 h-24 rounded-lg" />
+                                        <div class="flex-1">
+                                            <h4 class="font-bold text-lg mb-2">${pack.name}</h4>
+                                            <p class="text-sm text-gray-400 mb-1">${pack.items}</p>
+                                            <p class="text-xs text-gray-500">${pack.size}</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-2xl font-bold text-cyan-400 mb-2">$${pack.price}</p>
+                                            <button onclick="addToCart(${pack.id}, 'pack')" class="bg-cyan-600 hover:bg-cyan-700 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+                                                ${icons.download} Buy
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <div class="bg-gray-800/30 border-2 border-dashed border-gray-700 rounded-xl p-12 text-center">
+                            <div class="text-6xl mb-4">📦</div>
+                            <h3 class="text-2xl font-bold mb-2">No sample packs yet</h3>
+                            <p class="text-gray-400">Add your first sample pack in the Supabase dashboard (we01_sample_packs table)</p>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderPlacementsTab() {
+            return `
+                <div>
+                    <h2 class="text-4xl font-bold mb-8 flex items-center gap-3 title-font">${icons.trophy} Placements</h2>
+                    ${state.placements.length > 0 ? `
+                        <div class="grid md:grid-cols-3 gap-6">
+                            ${state.placements.map((placement, idx) => `
+                                <${placement.placement_url ? `a href="${placement.placement_url}" target="_blank" rel="noopener noreferrer"` : 'div'} class="bg-gray-800/50 rounded-xl overflow-hidden hover:scale-105 transition-transform fade-in stagger-${(idx % 4) + 1} ${placement.placement_url ? 'cursor-pointer' : ''}">
+                                    <div class="relative">
+                                        <img src="${placement.cover}" alt="${placement.song_title}" class="w-full h-48 object-cover" />
+                                        ${placement.placement_url ? `
+                                            <div class="absolute top-3 right-3 bg-black/70 backdrop-blur px-2 py-1 rounded-full">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                    <div class="p-4">
+                                        <h3 class="font-bold">${placement.artist}</h3>
+                                        <p class="text-sm text-gray-400">${placement.song_title}</p>
+                                        <div class="flex justify-between items-center mt-3">
+                                            <span class="text-xs text-cyan-400">${placement.platform}</span>
+                                            <span class="text-xs text-gray-400">${placement.streams} streams</span>
+                                        </div>
+                                    </div>
+                                </${placement.placement_url ? 'a' : 'div'}>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <div class="bg-gray-800/30 border-2 border-dashed border-gray-700 rounded-xl p-12 text-center">
+                            <div class="text-6xl mb-4">🏆</div>
+                            <h3 class="text-2xl font-bold mb-2">No placements yet</h3>
+                            <p class="text-gray-400">Add your first placement in the Supabase dashboard (we01_placements table)</p>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderAboutTab() {
+            const profile = state.profile || {
+                producer_name: 'We01 Beatz',
+                tagline: 'Music Producer',
+                bio: 'Add your bio in the Supabase dashboard (we01_profile table)',
+                instagram: '',
+                youtube: '',
+                beatstars: '',
+                email: ''
+            };
+            
+            return `
+                <div>
+                    <h2 class="text-4xl font-bold mb-8 flex items-center gap-3 title-font">${icons.user} About</h2>
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <div class="bg-gray-800/50 backdrop-blur rounded-xl p-8">
+                            <h3 class="text-2xl font-bold mb-4 title-font">Bio</h3>
+                            ${state.profile ? `
+                                <p class="text-gray-300 leading-relaxed mb-6">${profile.bio}</p>
+                            ` : `
+                                <div class="bg-gray-900/50 border-2 border-dashed border-gray-700 rounded-lg p-8 text-center">
+                                    <div class="text-4xl mb-3">✍️</div>
+                                    <p class="text-gray-400">Add your producer bio in the Supabase dashboard</p>
+                                    <p class="text-sm text-gray-500 mt-2">Table: we01_profile</p>
+                                </div>
+                            `}
+                            ${state.testimonials.length > 0 ? `
+                                <div class="border-t border-gray-700 pt-6 mt-6">
+                                    <h3 class="text-xl font-semibold mb-4">Client Reviews</h3>
+                                    <div class="space-y-4">
+                                        ${state.testimonials.slice(0, 3).map(t => `
+                                            <div class="bg-gray-900/50 p-4 rounded-lg">
+                                                <div class="flex items-center gap-2 mb-2">
+                                                    ${Array(t.rating).fill(icons.star).join('')}
+                                                </div>
+                                                <p class="text-sm text-gray-300 mb-2">"${t.review}"</p>
+                                                <p class="text-xs text-gray-500">- ${t.client_name}</p>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="space-y-6">
+                            <div class="bg-gray-800/50 backdrop-blur rounded-xl p-8">
+                                <h3 class="text-xl font-semibold mb-4">Connect</h3>
+                                ${profile.instagram || profile.youtube || profile.beatstars || profile.email ? `
+                                    <div class="grid grid-cols-2 gap-3">
+                                        ${profile.instagram ? `<a href="${profile.instagram}" target="_blank" class="flex items-center justify-center gap-2 bg-gradient-to-r from-pink-600 to-purple-600 px-4 py-3 rounded-lg hover:scale-105 transition-transform">Instagram</a>` : ''}
+                                        ${profile.youtube ? `<a href="${profile.youtube}" target="_blank" class="flex items-center justify-center gap-2 bg-red-600 px-4 py-3 rounded-lg hover:scale-105 transition-transform">YouTube</a>` : ''}
+                                        ${profile.beatstars ? `<a href="${profile.beatstars}" target="_blank" class="flex items-center justify-center gap-2 bg-orange-600 px-4 py-3 rounded-lg hover:scale-105 transition-transform">BeatStars</a>` : ''}
+                                        ${profile.email ? `<a href="mailto:${profile.email}" class="flex items-center justify-center gap-2 bg-gray-700 px-4 py-3 rounded-lg hover:scale-105 transition-transform">Email</a>` : ''}
+                                    </div>
+                                ` : `
+                                    <div class="bg-gray-900/50 border-2 border-dashed border-gray-700 rounded-lg p-6 text-center">
+                                        <div class="text-3xl mb-2">🔗</div>
+                                        <p class="text-sm text-gray-400">Add your social links in we01_profile table</p>
+                                    </div>
+                                `}
+                            </div>
+                            <div class="bg-gradient-to-r from-cyan-900/30 to-blue-900/30 border border-cyan-500/30 rounded-xl p-8">
+                                <h3 class="text-xl font-semibold mb-4">Custom Services</h3>
+                                <ul class="space-y-2 text-gray-300">
+                                    <li>✓ Custom Beat Production</li>
+                                    <li>✓ Exclusive Licenses</li>
+                                    <li>✓ Mixing & Mastering</li>
+                                    <li>✓ Full Album Production</li>
+                                </ul>
+                                <button onclick="toggleBookingModal()" class="w-full bg-cyan-600 hover:bg-cyan-700 py-3 rounded-lg font-semibold mt-4">Get a Quote</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderContent() {
+            switch(state.activeTab) {
+                case 'beats': return renderBeatsTab();
+                case 'packs': return renderPacksTab();
+                case 'placements': return renderPlacementsTab();
+                case 'about': return renderAboutTab();
+                default: return renderBeatsTab();
+            }
+        }
+
+        function render() {
+            const tabs = ['beats', 'packs', 'placements', 'about'];
+            const profile = state.profile || { producer_name: 'We01 Beatz', tagline: 'Music Producer', avatar: '', banner: '' };
+            
+            document.getElementById('app').innerHTML = `
+                ${state.showNotification ? `
+                    <div class="fixed top-4 right-4 bg-green-600 px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2 animate-slide-in">
+                        ${icons.check} ${state.showNotification}
+                    </div>
+                ` : ''}
+
+                ${renderBookingModal()}
+                ${renderCartPanel()}
+
+                <div class="fixed top-4 left-4 z-40 flex items-center gap-3">
+                    <a href="../index.html" class="bg-gray-800/90 backdrop-blur px-4 py-2 rounded-full hover:bg-gray-700 transition-colors flex items-center gap-2">
+                        ${icons.home} <span class="hidden sm:inline">Back to Hub</span>
+                    </a>
+                </div>
+                <div class="fixed top-4 right-4 z-40">
+                    <button onclick="toggleCartPanel()" class="relative bg-gray-800/90 backdrop-blur p-3 rounded-full hover:bg-gray-700 transition-colors">
+                        ${icons.cart}
+                        ${state.cartItems.length > 0 ? '<span class="absolute -top-1 -right-1 bg-cyan-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">' + state.cartItems.length + '</span>' : ''}
+                    </button>
+                </div>
+
+                <div class="relative h-96 overflow-hidden">
+                    <img src="${profile.banner || 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=1200&h=400&fit=crop'}" alt="Banner" class="w-full h-full object-cover opacity-40" />
+                    <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/50 to-transparent"></div>
+                    <div class="absolute bottom-0 left-0 right-0 p-8">
+                        <div class="max-w-7xl mx-auto flex items-end gap-6 flex-wrap">
+                            <img src="${profile.avatar || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop'}" alt="${profile.producer_name}" class="w-40 h-40 rounded-full border-4 border-cyan-500 shadow-2xl glow" />
+                            <div class="flex-1">
+                                <h1 class="text-6xl font-bold mb-2 title-font">${profile.producer_name}</h1>
+                                <p class="text-cyan-300 text-lg mb-4">${profile.tagline}</p>
+                            </div>
+                            <button onclick="toggleBookingModal()" class="bg-gradient-to-r from-cyan-600 to-blue-600 px-8 py-4 rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-xl flex items-center gap-2">
+                                ${icons.calendar} Custom Order
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-b border-gray-700 sticky top-0 bg-gray-900/95 backdrop-blur z-40">
+                    <div class="max-w-7xl mx-auto px-8">
+                        <div class="flex gap-6 overflow-x-auto">
+                            ${tabs.map(tab => `
+                                <button onclick="setActiveTab('${tab}')" class="py-4 px-2 font-semibold capitalize transition-colors relative whitespace-nowrap ${state.activeTab === tab ? 'text-cyan-400' : 'text-gray-400 hover:text-white'}">
+                                    ${tab}
+                                    ${state.activeTab === tab ? '<div class="absolute bottom-0 left-0 right-0 h-1 bg-cyan-500"></div>' : ''}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="max-w-7xl mx-auto px-8 py-12 ${state.currentBeat ? 'pb-32' : ''}">
+                    ${renderContent()}
+                </div>
+
+                <!-- Audio Player Bar -->
+                ${state.currentBeat ? `
+                    <div class="fixed bottom-0 left-0 right-0 audio-player border-t border-gray-700 p-4 z-50">
+                        <div class="max-w-7xl mx-auto">
+                            <!-- Progress Bar -->
+                            <div class="progress-bar mb-3 cursor-pointer" onclick="seekAudio(event)">
+                                <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+                            </div>
+                            
+                            <div class="flex items-center gap-4">
+                                <img src="${state.currentBeat.cover}" alt="${state.currentBeat.title}" class="w-16 h-16 rounded-lg shadow-lg" />
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="font-semibold truncate">${state.currentBeat.title}</h4>
+                                    <p class="text-sm text-gray-400 truncate">${state.currentBeat.bpm} BPM • ${state.currentBeat.key}</p>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <span class="text-sm text-gray-400" id="current-time">0:00</span>
+                                    <button onclick="skipPrev()" class="p-2 hover:bg-gray-800 rounded-full transition-colors">
+                                        ${icons.skipPrev}
+                                    </button>
+                                    <button onclick='togglePlay(${JSON.stringify(state.currentBeat).replace(/'/g, "\\'")})'  class="bg-cyan-600 hover:bg-cyan-700 p-4 rounded-full transition-colors">
+                                        ${state.isPlaying ? icons.pause : icons.play}
+                                    </button>
+                                    <button onclick="skipNext()" class="p-2 hover:bg-gray-800 rounded-full transition-colors">
+                                        ${icons.skipNext}
+                                    </button>
+                                    <span class="text-sm text-gray-400" id="duration-time">0:00</span>
+                                    <button onclick="addToCart(${state.currentBeat.id}, 'beat')" class="bg-gradient-to-r from-cyan-600 to-blue-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+                                        ${icons.cart} Buy
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+        }
+
+        loadData();
+    </script>
+</body>
+</html>

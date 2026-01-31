@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elisha Rukovo - Software Developer</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Load configuration from external file (not committed to git) -->
+    <script src="../config.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@300;400;600;700&display=swap');
+        
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        code, .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in {
+            animation: fade-in 0.6s ease-out forwards;
+            animation-fill-mode: forwards;
+        }
+
+        .stagger-1 { animation-delay: 0.1s; opacity: 0; }
+        .stagger-2 { animation-delay: 0.2s; opacity: 0; }
+        .stagger-3 { animation-delay: 0.3s; opacity: 0; }
+        .stagger-4 { animation-delay: 0.4s; opacity: 0; }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+        }
+
+        .terminal-effect {
+            border-left: 3px solid #8b5cf6;
+            background: linear-gradient(90deg, rgba(139, 92, 246, 0.1) 0%, transparent 100%);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+    <div id="app">
+        <div class="loading">
+            <div class="text-2xl">Loading portfolio...</div>
+        </div>
+    </div>
+
+    <script>
+        // Supabase Configuration
+        // Load Supabase configuration from external config file
+        const SUPABASE_URL = window.ENV_CONFIG?.SUPABASE_URL || '';
+        const SUPABASE_KEY = window.ENV_CONFIG?.SUPABASE_ANON_KEY || '';
+        
+        if (!SUPABASE_URL || !SUPABASE_KEY) {
+            console.error('⚠️ Missing Supabase configuration. Please create config.js from config.template.js');
+        }
+        
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // App State
+        const state = {
+            activeTab: 'projects',
+            profile: null,
+            projects: [],
+            experience: [],
+            education: [],
+            certificates: [],
+            skills: []
+        };
+
+        // SVG Icons
+        const icons = {
+            home: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>',
+            code: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
+            briefcase: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>',
+            graduation: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>',
+            tool: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>',
+            externalLink: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>',
+            github: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"></path><path d="M9 18c-4.51 2-5-2-7-2"></path></svg>',
+            linkedin: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path><rect x="2" y="9" width="4" height="12"></rect><circle cx="4" cy="4" r="2"></circle></svg>',
+            mail: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>',
+            download: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
+            certificate: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line><circle cx="17" cy="17" r="2"></circle></svg>',
+        };
+
+        // Fetch data from Supabase
+        async function loadData() {
+            try {
+                const { data: profileData } = await supabaseClient.from('elisha_profile').select('*').limit(1).single();
+                if (profileData) state.profile = profileData;
+
+                const { data: projectsData } = await supabaseClient.from('elisha_projects').select('*').order('created_at', { ascending: false });
+                if (projectsData) state.projects = projectsData;
+
+                const { data: experienceData } = await supabaseClient.from('elisha_experience').select('*').order('created_at', { ascending: false });
+                if (experienceData) state.experience = experienceData;
+
+                const { data: educationData } = await supabaseClient.from('elisha_education').select('*').order('created_at', { ascending: false });
+                if (educationData) state.education = educationData;
+
+                const { data: certificatesData } = await supabaseClient.from('elisha_certificates').select('*').order('created_at', { ascending: false });
+                if (certificatesData) state.certificates = certificatesData;
+
+                const { data: skillsData } = await supabaseClient.from('elisha_skills').select('*').order('created_at', { ascending: false });
+                if (skillsData) state.skills = skillsData;
+
+                // Always render, even with empty data
+                render();
+            } catch (error) {
+                console.error('Error loading data:', error);
+                // Still render with empty data
+                render();
+            }
+        }
+
+        function setActiveTab(tab) {
+            state.activeTab = tab;
+            render();
+        }
+
+        function renderProjectsTab() {
+            return `
+                <div>
+                    <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">
+                        ${icons.code}
+                        Projects
+                    </h2>
+                    ${state.projects.length > 0 ? `
+                        <div class="grid md:grid-cols-2 gap-6">
+                            ${state.projects.map((project, idx) => `
+                                <div class="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-xl transition-all fade-in stagger-${(idx % 4) + 1}">
+                                    <img src="${project.image}" alt="${project.title}" class="w-full h-48 object-cover" />
+                                    <div class="p-6">
+                                        <h3 class="text-xl font-bold mb-2">${project.title}</h3>
+                                        <p class="text-gray-600 mb-4 text-sm">${project.description}</p>
+                                        <div class="flex flex-wrap gap-2 mb-4">
+                                            ${project.tech_stack.split(',').map(tech => `<span class="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-medium">${tech.trim()}</span>`).join('')}
+                                        </div>
+                                        <div class="flex gap-3">
+                                            ${project.github_url ? `<a href="${project.github_url}" target="_blank" class="text-gray-600 hover:text-purple-600 transition-colors">${icons.github}</a>` : ''}
+                                            ${project.live_url ? `<a href="${project.live_url}" target="_blank" class="text-gray-600 hover:text-purple-600 transition-colors">${icons.externalLink}</a>` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <div class="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
+                            <div class="text-6xl mb-4">💻</div>
+                            <h3 class="text-2xl font-bold mb-2 text-gray-700">No projects yet</h3>
+                            <p class="text-gray-500">Add your first project in the Supabase dashboard (elisha_projects table)</p>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderExperienceTab() {
+            return `
+                <div>
+                    <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">
+                        ${icons.briefcase}
+                        Experience
+                    </h2>
+                    ${state.experience.length > 0 ? `
+                        <div class="space-y-6">
+                            ${state.experience.map((exp, idx) => `
+                                <div class="terminal-effect pl-6 pr-6 py-6 bg-white rounded-xl fade-in stagger-${(idx % 4) + 1}">
+                                    <div class="flex justify-between items-start mb-2 flex-wrap gap-2">
+                                        <div>
+                                            <h3 class="text-xl font-bold">${exp.position}</h3>
+                                            <p class="text-purple-600 font-medium">${exp.company}</p>
+                                        </div>
+                                        <span class="code-font text-sm text-gray-500">${exp.start_date} – ${exp.end_date}</span>
+                                    </div>
+                                    <p class="text-gray-600 mt-3">${exp.description}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <div class="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
+                            <div class="text-6xl mb-4">💼</div>
+                            <h3 class="text-2xl font-bold mb-2 text-gray-700">No experience added yet</h3>
+                            <p class="text-gray-500">Add your work experience in the Supabase dashboard (elisha_experience table)</p>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderEducationTab() {
+            return `
+                <div>
+                    <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">
+                        ${icons.graduation}
+                        Education
+                    </h2>
+                    ${state.education.length > 0 ? `
+                        <div class="space-y-6">
+                            ${state.education.map((edu, idx) => `
+                                <div class="bg-white border border-gray-200 rounded-xl p-6 hover:border-purple-300 transition-all fade-in stagger-${(idx % 4) + 1}">
+                                    <div class="flex justify-between items-start mb-2 flex-wrap gap-2">
+                                        <div>
+                                            <h3 class="text-xl font-bold">${edu.degree}</h3>
+                                            <p class="text-purple-600 font-medium">${edu.institution}</p>
+                                            <p class="text-gray-600 text-sm mt-1">${edu.field}</p>
+                                        </div>
+                                        <span class="code-font text-sm text-gray-500">${edu.start_date} – ${edu.end_date}</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <div class="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
+                            <div class="text-6xl mb-4">🎓</div>
+                            <h3 class="text-2xl font-bold mb-2 text-gray-700">No education added yet</h3>
+                            <p class="text-gray-500">Add your education in the Supabase dashboard (elisha_education table)</p>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderCertificatesTab() {
+            return `
+                <div>
+                    <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">
+                        ${icons.certificate}
+                        Certificates
+                    </h2>
+                    ${state.certificates.length > 0 ? `
+                        <div class="grid md:grid-cols-2 gap-6">
+                            ${state.certificates.map((cert, idx) => `
+                                <div class="bg-white border border-gray-200 rounded-xl p-6 hover:border-purple-300 transition-all fade-in stagger-${(idx % 4) + 1}">
+                                    <div class="flex justify-between items-start mb-3">
+                                        <div class="flex-1 pr-4">
+                                            <h3 class="text-lg font-bold">${cert.title}</h3>
+                                            <p class="text-purple-600 font-medium text-sm">${cert.issuer}</p>
+                                        </div>
+                                        <span class="code-font text-sm text-gray-500 whitespace-nowrap">${cert.date}</span>
+                                    </div>
+                                    ${cert.description ? `<p class="text-gray-600 text-sm mt-2">${cert.description}</p>` : ''}
+                                    ${cert.url ? `
+                                        <a href="${cert.url}" target="_blank" class="inline-flex items-center gap-1 mt-3 text-purple-600 hover:text-purple-700 text-sm font-medium transition-colors">
+                                            ${icons.externalLink}
+                                            View Certificate
+                                        </a>
+                                    ` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <div class="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
+                            <div class="text-6xl mb-4">🏅</div>
+                            <h3 class="text-2xl font-bold mb-2 text-gray-700">No certificates added yet</h3>
+                            <p class="text-gray-500">Add your certificates via the admin dashboard (elisha_certificates table)</p>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderSkillsTab() {
+            return `
+                <div>
+                    <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">
+                        ${icons.tool}
+                        Skills
+                    </h2>
+                    ${state.skills.length > 0 ? `
+                        <div class="grid md:grid-cols-2 gap-6">
+                            ${state.skills.map((skillSet, idx) => `
+                                <div class="bg-white border border-gray-200 rounded-xl p-6 fade-in stagger-${(idx % 4) + 1}">
+                                    <h3 class="text-lg font-bold mb-4 text-purple-600">${skillSet.category}</h3>
+                                    <div class="flex flex-wrap gap-2">
+                                        ${skillSet.skills.split(',').map(skill => `<span class="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium">${skill.trim()}</span>`).join('')}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <div class="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
+                            <div class="text-6xl mb-4">🛠️</div>
+                            <h3 class="text-2xl font-bold mb-2 text-gray-700">No skills added yet</h3>
+                            <p class="text-gray-500">Add your skills in the Supabase dashboard (elisha_skills table)</p>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderContent() {
+            switch(state.activeTab) {
+                case 'projects': return renderProjectsTab();
+                case 'experience': return renderExperienceTab();
+                case 'education': return renderEducationTab();
+                case 'certificates': return renderCertificatesTab();
+                case 'skills': return renderSkillsTab();
+                default: return renderProjectsTab();
+            }
+        }
+
+        function render() {
+            const tabs = ['projects', 'experience', 'education', 'certificates', 'skills'];
+            const profile = state.profile || { 
+                full_name: 'Elisha Rukovo', 
+                tagline: 'Software Developer', 
+                bio: 'Passionate software developer...', 
+                avatar: '',
+                email: '',
+                linkedin: '',
+                github: ''
+            };
+            
+            document.getElementById('app').innerHTML = `
+                <!-- Navigation -->
+                <nav class="bg-white border-b border-gray-200 sticky top-0 z-50">
+                    <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+                        <div class="flex items-center gap-3">
+                            <a href="../index.html" class="text-gray-600 hover:text-purple-600 transition-colors" title="Back to Hub">
+                                ${icons.home}
+                            </a>
+                            <span class="text-gray-300">|</span>
+                            <h1 class="text-xl font-bold code-font">{elisha}</h1>
+                        </div>
+                        <div class="flex gap-4">
+                            ${profile.github ? `<a href="${profile.github}" target="_blank" class="text-gray-600 hover:text-purple-600 transition-colors">${icons.github}</a>` : ''}
+                            ${profile.linkedin ? `<a href="${profile.linkedin}" target="_blank" class="text-gray-600 hover:text-purple-600 transition-colors">${icons.linkedin}</a>` : ''}
+                            ${profile.email ? `<a href="mailto:${profile.email}" class="text-gray-600 hover:text-purple-600 transition-colors">${icons.mail}</a>` : ''}
+                            ${profile.resume_url ? `<a href="${profile.resume_url}" target="_blank" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2 text-sm font-medium">${icons.download} Resume</a>` : ''}
+                        </div>
+                    </div>
+                </nav>
+
+                <!-- Hero -->
+                <div class="bg-gradient-to-br from-purple-50 to-white py-20">
+                    <div class="max-w-6xl mx-auto px-6">
+                        <div class="flex items-center gap-8 flex-wrap">
+                            <img src="${profile.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&h=300&fit=crop'}" alt="${profile.full_name}" class="w-32 h-32 rounded-full border-4 border-purple-600 shadow-xl" />
+                            <div class="flex-1">
+                                <h1 class="text-5xl font-bold mb-3">${profile.full_name}</h1>
+                                <p class="text-xl text-purple-600 font-medium mb-4">${profile.tagline}</p>
+                                <p class="text-gray-600 max-w-2xl">${profile.bio}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="bg-white border-b border-gray-200">
+                    <div class="max-w-6xl mx-auto px-6">
+                        <div class="flex gap-8 overflow-x-auto">
+                            ${tabs.map(tab => `
+                                <button onclick="setActiveTab('${tab}')" class="py-4 px-2 font-semibold capitalize transition-colors relative whitespace-nowrap ${state.activeTab === tab ? 'text-purple-600' : 'text-gray-600 hover:text-purple-600'}">
+                                    ${tab}
+                                    ${state.activeTab === tab ? '<div class="absolute bottom-0 left-0 right-0 h-1 bg-purple-600"></div>' : ''}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Content -->
+                <div class="max-w-6xl mx-auto px-6 py-12">
+                    ${renderContent()}
+                </div>
+
+                <!-- Footer -->
+                <footer class="bg-gray-50 border-t border-gray-200 py-8 mt-20">
+                    <div class="max-w-6xl mx-auto px-6 text-center text-gray-600">
+                        <p class="code-font text-sm">© 2026 ${profile.full_name}. Built with passion.</p>
+                    </div>
+                </footer>
+            `;
+        }
+
+        loadData();
+    </script>
+</body>
+</html>
