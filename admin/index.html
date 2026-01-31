@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Elisha Rukovo</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Load configuration from external file (not committed to git) -->
+    <script src="config.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .slide-in { animation: slideIn 0.3s ease-out; }
+        .gradient-purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+        .gradient-pink { background: linear-gradient(135deg, #ec4899, #db2777); }
+        .gradient-cyan { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+        .file-upload { border: 2px dashed #cbd5e0; padding: 20px; border-radius: 8px; cursor: pointer; transition: all 0.3s; text-align: center; }
+        .file-upload:hover { border-color: #8b5cf6; background: #f9fafb; }
+        .file-upload.has-file { border-color: #10b981; background: #ecfdf5; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app"></div>
+
+    <script>
+        // ===== SUPABASE SETUP =====
+        // Load Supabase configuration from external config file
+        const SUPABASE_URL = window.ENV_CONFIG?.SUPABASE_URL || '';
+        const SUPABASE_KEY = window.ENV_CONFIG?.SUPABASE_ANON_KEY || '';
+        
+        if (!SUPABASE_URL || !SUPABASE_KEY) {
+            console.error('⚠️ Missing Supabase configuration. Please create config.js from config.template.js');
+        }
+        
+        let supabaseClient;
+        try {
+            supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        } catch (e) {
+            console.error('Failed to initialize Supabase:', e);
+        }
+
+        const ADMIN_PASSWORD = 'elisha2026';
+
+        // ===== STATE =====
+        const state = {
+            isLoggedIn: localStorage.getItem('adminLoggedIn') === 'true',
+            platform: null,
+            section: null,
+            data: {},
+            editing: null,
+            notification: null,
+            uploads: {},
+            uploading: {}
+        };
+
+        // ===== PLATFORMS CONFIG =====
+        const platforms = {
+            elisha: {
+                name: 'Elisha Portfolio',
+                color: 'purple',
+                sections: {
+                    profile: 'elisha_profile',
+                    projects: 'elisha_projects',
+                    experience: 'elisha_experience',
+                    education: 'elisha_education',
+                    certificates: 'elisha_certificates',
+                    skills: 'elisha_skills'
+                }
+            },
+            ellarg: {
+                name: 'Ellar G (Artist)',
+                color: 'pink',
+                sections: {
+                    profile: 'ellarg_profile',
+                    tracks: 'ellarg_tracks',
+                    releases: 'ellarg_releases',
+                    tour: 'ellarg_tour',
+                    videos: 'ellarg_videos'
+                }
+            },
+            we01: {
+                name: 'We01 Beatz',
+                color: 'cyan',
+                sections: {
+                    profile: 'we01_profile',
+                    beats: 'we01_beats',
+                    packs: 'we01_sample_packs',
+                    placements: 'we01_placements',
+                    testimonials: 'we01_testimonials'
+                }
+            }
+        };
+
+        // ===== FORM FIELDS CONFIG =====
+        const formFields = {
+            elisha_profile: [
+                { name: 'full_name', label: 'Full Name', type: 'text', required: true },
+                { name: 'tagline', label: 'Tagline', type: 'text', required: true },
+                { name: 'bio', label: 'Bio', type: 'textarea', required: true },
+                { name: 'avatar', label: 'Avatar', type: 'file', accept: 'image/*', required: true },
+                { name: 'resume_url', label: 'Resume URL', type: 'url' },
+                { name: 'email', label: 'Email', type: 'email', required: true },
+                { name: 'linkedin', label: 'LinkedIn URL', type: 'url' },
+                { name: 'github', label: 'GitHub URL', type: 'url' }
+            ],
+            elisha_projects: [
+                { name: 'title', label: 'Project Title', type: 'text', required: true },
+                { name: 'description', label: 'Description', type: 'textarea', required: true },
+                { name: 'image', label: 'Project Image', type: 'file', accept: 'image/*', required: true },
+                { name: 'tech_stack', label: 'Tech Stack (comma-separated)', type: 'text', required: true },
+                { name: 'github_url', label: 'GitHub URL', type: 'url' },
+                { name: 'live_url', label: 'Live URL', type: 'url' }
+            ],
+            elisha_experience: [
+                { name: 'company', label: 'Company', type: 'text', required: true },
+                { name: 'position', label: 'Position', type: 'text', required: true },
+                { name: 'start_date', label: 'Start Date', type: 'text', required: true, placeholder: 'e.g. Jan 2023' },
+                { name: 'end_date', label: 'End Date', type: 'text', required: true, placeholder: 'e.g. Dec 2024 or Present' },
+                { name: 'description', label: 'Description', type: 'textarea', required: true }
+            ],
+            elisha_education: [
+                { name: 'institution', label: 'Institution', type: 'text', required: true },
+                { name: 'degree', label: 'Degree', type: 'text', required: true },
+                { name: 'field', label: 'Field of Study', type: 'text', required: true },
+                { name: 'start_date', label: 'Start Date', type: 'text', required: true, placeholder: 'e.g. Sep 2019' },
+                { name: 'end_date', label: 'End Date', type: 'text', required: true, placeholder: 'e.g. Jun 2023 or Present' }
+            ],
+            elisha_skills: [
+                { name: 'category', label: 'Category', type: 'text', required: true },
+                { name: 'skills', label: 'Skills (comma-separated)', type: 'text', required: true }
+            ],
+            elisha_certificates: [
+                { name: 'title', label: 'Certificate Title', type: 'text', required: true },
+                { name: 'issuer', label: 'Issuer / Organisation', type: 'text', required: true },
+                { name: 'date', label: 'Date Awarded', type: 'text', required: true, placeholder: 'e.g. Mar 2024' },
+                { name: 'url', label: 'Verification URL', type: 'url' },
+                { name: 'description', label: 'Description', type: 'textarea' }
+            ],
+            ellarg_profile: [
+                { name: 'artist_name', label: 'Artist Name', type: 'text', required: true },
+                { name: 'tagline', label: 'Tagline', type: 'text', required: true },
+                { name: 'bio', label: 'Bio', type: 'textarea', required: true },
+                { name: 'avatar', label: 'Avatar', type: 'file', accept: 'image/*', required: true },
+                { name: 'banner', label: 'Banner Image', type: 'file', accept: 'image/*', required: true },
+                { name: 'instagram', label: 'Instagram URL', type: 'url' },
+                { name: 'twitter', label: 'Twitter URL', type: 'url' },
+                { name: 'youtube', label: 'YouTube URL', type: 'url' },
+                { name: 'spotify', label: 'Spotify URL', type: 'url' }
+            ],
+            ellarg_tracks: [
+                { name: 'title', label: 'Track Title', type: 'text', required: true },
+                { name: 'album', label: 'Album', type: 'text', required: true },
+                { name: 'duration', label: 'Duration (e.g., 3:45)', type: 'text', required: true },
+                { name: 'streams', label: 'Streams (e.g., 420K)', type: 'text', required: true },
+                { name: 'cover', label: 'Cover Image', type: 'file', accept: 'image/*', required: true },
+                { name: 'preview_url', label: 'Audio Preview', type: 'audio', accept: 'audio/mpeg,audio/wav,audio/mp3,.mp3,.wav,.m4a' },
+                { name: 'is_exclusive', label: 'VIP Exclusive', type: 'checkbox' },
+                { name: 'spotify_url', label: 'Spotify URL', type: 'url' },
+                { name: 'apple_music_url', label: 'Apple Music URL', type: 'url' }
+            ],
+            ellarg_releases: [
+                { name: 'title', label: 'Release Title', type: 'text', required: true },
+                { name: 'date', label: 'Release Date', type: 'text', required: true },
+                { name: 'type', label: 'Type (Single/EP/Album)', type: 'text', required: true },
+                { name: 'artwork', label: 'Artwork', type: 'file', accept: 'image/*', required: true }
+            ],
+            ellarg_tour: [
+                { name: 'city', label: 'City', type: 'text', required: true },
+                { name: 'venue', label: 'Venue', type: 'text', required: true },
+                { name: 'date', label: 'Date', type: 'text', required: true },
+                { name: 'tickets_url', label: 'Tickets URL', type: 'url', required: true }
+            ],
+            ellarg_videos: [
+                { name: 'title', label: 'Video Title', type: 'text', required: true },
+                { name: 'thumbnail', label: 'Thumbnail', type: 'file', accept: 'image/*', required: true },
+                { name: 'views', label: 'Views (e.g., 420K)', type: 'text', required: true },
+                { name: 'video_url', label: 'YouTube Video URL', type: 'url', required: true }
+            ],
+            we01_profile: [
+                { name: 'producer_name', label: 'Producer Name', type: 'text', required: true },
+                { name: 'tagline', label: 'Tagline', type: 'text', required: true },
+                { name: 'bio', label: 'Bio', type: 'textarea', required: true },
+                { name: 'avatar', label: 'Avatar', type: 'file', accept: 'image/*', required: true },
+                { name: 'banner', label: 'Banner Image', type: 'file', accept: 'image/*', required: true },
+                { name: 'instagram', label: 'Instagram URL', type: 'url' },
+                { name: 'beatstars', label: 'BeatStars URL', type: 'url' },
+                { name: 'youtube', label: 'YouTube URL', type: 'url' },
+                { name: 'email', label: 'Email', type: 'email', required: true }
+            ],
+            we01_beats: [
+                { name: 'title', label: 'Beat Title', type: 'text', required: true },
+                { name: 'bpm', label: 'BPM', type: 'number', required: true },
+                { name: 'key', label: 'Key (e.g., Dm)', type: 'text', required: true },
+                { name: 'price', label: 'Price', type: 'number', required: true },
+                { name: 'tags', label: 'Tags (comma-separated)', type: 'text', required: true },
+                { name: 'cover', label: 'Cover Image', type: 'file', accept: 'image/*', required: true },
+                { name: 'preview_url', label: 'Audio Preview', type: 'audio', accept: 'audio/mpeg,audio/wav,audio/mp3,.mp3,.wav,.m4a' },
+                { name: 'type', label: 'Type (e.g., MP3 + WAV)', type: 'text', required: true },
+                { name: 'sold', label: 'Number Sold', type: 'number' }
+            ],
+            we01_sample_packs: [
+                { name: 'name', label: 'Pack Name', type: 'text', required: true },
+                { name: 'price', label: 'Price', type: 'number', required: true },
+                { name: 'items', label: 'Items (e.g., 150+ sounds)', type: 'text', required: true },
+                { name: 'size', label: 'File Size (e.g., 420 MB)', type: 'text', required: true },
+                { name: 'cover', label: 'Cover Image', type: 'file', accept: 'image/*', required: true }
+            ],
+            we01_placements: [
+                { name: 'artist', label: 'Artist Name', type: 'text', required: true },
+                { name: 'song_title', label: 'Song Title', type: 'text', required: true },
+                { name: 'platform', label: 'Platform (e.g., Spotify)', type: 'text', required: true },
+                { name: 'streams', label: 'Streams', type: 'text', required: true },
+                { name: 'placement_url', label: 'Link (Spotify / YouTube)', type: 'url' },
+                { name: 'cover', label: 'Cover Image', type: 'file', accept: 'image/*', required: true }
+            ],
+            we01_testimonials: [
+                { name: 'client_name', label: 'Client Name', type: 'text', required: true },
+                { name: 'client_avatar', label: 'Client Avatar', type: 'file', accept: 'image/*' },
+                { name: 'rating', label: 'Rating (1-5)', type: 'number', required: true },
+                { name: 'review', label: 'Review', type: 'textarea', required: true }
+            ]
+        };
+
+        // ===== UTILITY FUNCTIONS =====
+        function notify(message, type = 'info') {
+            state.notification = { message, type };
+            render();
+            setTimeout(() => {
+                state.notification = null;
+                render();
+            }, 3000);
+        }
+
+        function getColorClasses(color) {
+            const colors = {
+                purple: { bg: 'bg-purple-600', hover: 'hover:bg-purple-700', border: 'border-purple-500', text: 'text-purple-600', gradient: 'gradient-purple' },
+                pink: { bg: 'bg-pink-600', hover: 'hover:bg-pink-700', border: 'border-pink-500', text: 'text-pink-600', gradient: 'gradient-pink' },
+                cyan: { bg: 'bg-cyan-600', hover: 'hover:bg-cyan-700', border: 'border-cyan-500', text: 'text-cyan-600', gradient: 'gradient-cyan' }
+            };
+            return colors[color] || colors.purple;
+        }
+
+        // ===== FILE UPLOAD (FIXED FOR BANNER) =====
+        async function uploadFile(file, folder) {
+            const ext = file.name.split('.').pop();
+            const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
+            
+            const { data, error } = await supabaseClient.storage
+                .from('media')
+                .upload(fileName, file, { cacheControl: '3600', upsert: false });
+            
+            if (error) throw error;
+            
+            const { data: urlData } = supabaseClient.storage
+                .from('media')
+                .getPublicUrl(fileName);
+            
+            return urlData.publicUrl;
+        }
+
+        async function handleFileSelect(event, fieldName) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            console.log('Uploading file for field:', fieldName); // Debug log
+
+            state.uploading[fieldName] = true;
+            render();
+
+            try {
+                notify('Uploading file...', 'info');
+                const url = await uploadFile(file, state.section);
+                state.uploads[fieldName] = url; // KEY FIX: Uses the exact fieldName passed
+                console.log('Upload successful for', fieldName, ':', url); // Debug log
+                notify('File uploaded successfully!', 'success');
+            } catch (error) {
+                console.error('Upload error:', error);
+                notify('Upload failed: ' + error.message, 'error');
+            } finally {
+                state.uploading[fieldName] = false;
+                render();
+            }
+        }
+
+        // ===== AUTH =====
+        function login(password) {
+            if (password === ADMIN_PASSWORD) {
+                state.isLoggedIn = true;
+                localStorage.setItem('adminLoggedIn', 'true');
+                render();
+            } else {
+                notify('Incorrect password', 'error');
+            }
+        }
+
+        function logout() {
+            state.isLoggedIn = false;
+            state.platform = null;
+            state.section = null;
+            localStorage.removeItem('adminLoggedIn');
+            render();
+        }
+
+        // ===== NAVIGATION =====
+        function selectPlatform(platform) {
+            state.platform = platform;
+            state.section = null;
+            render();
+        }
+
+        function selectSection(section) {
+            state.section = section;
+            state.uploads = {};
+            state.editing = null;
+            loadData();
+        }
+
+        function goBack() {
+            if (state.section) {
+                state.section = null;
+                state.editing = null;
+                state.uploads = {};
+            } else if (state.platform) {
+                state.platform = null;
+            }
+            render();
+        }
+
+        // ===== DATA OPERATIONS =====
+        async function loadData() {
+            const table = platforms[state.platform].sections[state.section];
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from(table)
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (error) throw error;
+                state.data[table] = data || [];
+                render();
+            } catch (error) {
+                console.error('Load error:', error);
+                notify('Failed to load data: ' + error.message, 'error');
+                state.data[table] = [];
+                render();
+            }
+        }
+
+        async function saveItem(formData) {
+            const table = platforms[state.platform].sections[state.section];
+            
+            // Merge uploaded file URLs
+            console.log('Uploads before save:', state.uploads); // Debug log
+            Object.keys(state.uploads).forEach(key => {
+                if (state.uploads[key]) {
+                    formData[key] = state.uploads[key];
+                    console.log('Setting', key, 'to', state.uploads[key]); // Debug log
+                }
+            });
+
+            console.log('Final formData:', formData); // Debug log
+
+            try {
+                if (state.editing) {
+                    const { error } = await supabaseClient
+                        .from(table)
+                        .update(formData)
+                        .eq('id', state.editing.id);
+                    
+                    if (error) throw error;
+                    notify('Updated successfully!', 'success');
+                } else {
+                    const { error } = await supabaseClient
+                        .from(table)
+                        .insert([formData]);
+                    
+                    if (error) throw error;
+                    notify('Added successfully!', 'success');
+                }
+
+                state.editing = null;
+                state.uploads = {};
+                loadData();
+            } catch (error) {
+                console.error('Save error:', error);
+                notify('Failed to save: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteItem(id) {
+            if (!confirm('Are you sure you want to delete this item?')) return;
+            
+            const table = platforms[state.platform].sections[state.section];
+            
+            try {
+                const { error } = await supabaseClient
+                    .from(table)
+                    .delete()
+                    .eq('id', id);
+                
+                if (error) throw error;
+                notify('Deleted successfully!', 'success');
+                loadData();
+            } catch (error) {
+                console.error('Delete error:', error);
+                notify('Failed to delete: ' + error.message, 'error');
+            }
+        }
+
+        function editItem(item) {
+            state.editing = item;
+            state.uploads = {};
+            render();
+            setTimeout(() => {
+                document.getElementById('form-section')?.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        }
+
+        function cancelEdit() {
+            state.editing = null;
+            state.uploads = {};
+            render();
+        }
+
+        // ===== FORM HANDLING =====
+        function handleFormSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const table = platforms[state.platform].sections[state.section];
+            const fields = formFields[table] || [];
+            const formData = {};
+
+            fields.forEach(field => {
+                const element = form.elements[field.name];
+                if (!element) return;
+
+                if (field.type === 'checkbox') {
+                    formData[field.name] = element.checked;
+                } else if (field.type === 'number') {
+                    formData[field.name] = parseFloat(element.value) || 0;
+                } else if (field.type === 'file' || field.type === 'audio') {
+                    // File URLs come from state.uploads, handled in saveItem
+                    if (state.editing && state.editing[field.name] && !state.uploads[field.name]) {
+                        formData[field.name] = state.editing[field.name];
+                    }
+                } else {
+                    formData[field.name] = element.value;
+                }
+            });
+
+            saveItem(formData);
+        }
+
+        // ===== RENDER FUNCTIONS =====
+        function renderNotification() {
+            if (!state.notification) return '';
+            const bgColor = state.notification.type === 'success' ? 'bg-green-600' 
+                          : state.notification.type === 'error' ? 'bg-red-600' 
+                          : 'bg-blue-600';
+            return `
+                <div class="fixed top-4 right-4 z-50 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg slide-in">
+                    ${state.notification.message}
+                </div>
+            `;
+        }
+
+        function renderLogin() {
+            return `
+                <div class="min-h-screen flex items-center justify-center gradient-purple">
+                    <div class="bg-white rounded-2xl shadow-2xl p-12 max-w-md w-full mx-4 slide-in">
+                        <h1 class="text-4xl font-bold text-center mb-2 text-gray-800">Admin Login</h1>
+                        <p class="text-center text-gray-500 mb-8">Enter your password to continue</p>
+                        <form onsubmit="event.preventDefault(); login(document.getElementById('password').value);">
+                            <input 
+                                type="password" 
+                                id="password" 
+                                class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-600 focus:outline-none mb-6" 
+                                placeholder="Password"
+                                required 
+                                autofocus 
+                            />
+                            <button type="submit" class="w-full gradient-purple text-white py-3 rounded-lg font-semibold hover:opacity-90 transition-opacity">
+                                Login
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPlatformSelector() {
+            return `
+                <div class="min-h-screen bg-gray-50">
+                    <nav class="bg-white shadow-sm border-b sticky top-0 z-40">
+                        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+                            <h1 class="text-2xl font-bold text-gray-800">ADMIN DASHBOARD</h1>
+                            <button onclick="logout()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm">
+                                Logout
+                            </button>
+                        </div>
+                    </nav>
+                    
+                    <div class="max-w-7xl mx-auto px-6 py-12">
+                        <div class="text-center mb-12">
+                            <h2 class="text-4xl font-bold mb-4 text-gray-800">Select Platform</h2>
+                            <p class="text-gray-600 text-lg">Choose which platform you want to manage</p>
+                        </div>
+
+                        <div class="grid md:grid-cols-3 gap-8">
+                            ${Object.entries(platforms).map(([key, platform]) => {
+                                const colors = getColorClasses(platform.color);
+                                return `
+                                    <button 
+                                        onclick="selectPlatform('${key}')" 
+                                        class="bg-white border-2 border-gray-200 hover:${colors.border} rounded-xl p-8 transition-all transform hover:scale-105 hover:shadow-xl text-left"
+                                    >
+                                        <div class="w-16 h-16 ${colors.gradient} rounded-2xl mb-6 flex items-center justify-center">
+                                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                                            </svg>
+                                        </div>
+                                        <h3 class="text-2xl font-bold mb-2 ${colors.text}">${platform.name}</h3>
+                                        <p class="text-gray-600">${Object.keys(platform.sections).length} sections</p>
+                                    </button>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSectionSelector() {
+            const platform = platforms[state.platform];
+            const colors = getColorClasses(platform.color);
+            
+            return `
+                <div class="min-h-screen bg-gray-50">
+                    <nav class="bg-white shadow-sm border-b sticky top-0 z-40">
+                        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+                            <div class="flex items-center gap-4">
+                                <button onclick="goBack()" class="${colors.text} hover:opacity-80 flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                                    </svg>
+                                    Back
+                                </button>
+                                <div class="w-8 h-8 ${colors.gradient} rounded-lg"></div>
+                                <h1 class="text-2xl font-bold text-gray-800">${platform.name}</h1>
+                            </div>
+                            <button onclick="logout()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm">
+                                Logout
+                            </button>
+                        </div>
+                    </nav>
+                    
+                    <div class="max-w-7xl mx-auto px-6 py-12">
+                        <h2 class="text-3xl font-bold mb-8 text-gray-800">Select Section</h2>
+                        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            ${Object.entries(platform.sections).map(([key, table]) => `
+                                <button 
+                                    onclick="selectSection('${key}')" 
+                                    class="bg-white border-2 border-gray-200 hover:${colors.border} rounded-xl p-6 transition-all hover:shadow-lg text-left"
+                                >
+                                    <h3 class="text-xl font-bold text-gray-800 mb-2 capitalize">${key.replace('_', ' ')}</h3>
+                                    <p class="text-sm text-gray-500 font-mono">${table}</p>
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderField(field, value = '') {
+            const isUploading = state.uploading[field.name];
+            const uploadedUrl = state.uploads[field.name];
+            const existingUrl = state.editing?.[field.name];
+            const currentUrl = uploadedUrl || existingUrl || '';
+
+            if (field.type === 'textarea') {
+                return `
+                    <textarea 
+                        name="${field.name}" 
+                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-600 focus:outline-none resize-none" 
+                        rows="4" 
+                        ${field.required ? 'required' : ''}
+                    >${value}</textarea>
+                `;
+            }
+
+            if (field.type === 'checkbox') {
+                return `
+                    <div class="flex items-center gap-3 h-12">
+                        <input 
+                            type="checkbox" 
+                            name="${field.name}" 
+                            class="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500" 
+                            ${value ? 'checked' : ''} 
+                        />
+                        <span class="text-gray-600">Yes</span>
+                    </div>
+                `;
+            }
+
+            if (field.type === 'file') {
+                return `
+                    <div class="space-y-3">
+                        <div class="file-upload ${currentUrl ? 'has-file' : ''}" onclick="document.getElementById('file_${field.name}').click()">
+                            ${isUploading ? `
+                                <div class="flex items-center justify-center gap-2">
+                                    <svg class="animate-spin h-5 w-5 text-purple-600" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                    </svg>
+                                    <span>Uploading...</span>
+                                </div>
+                            ` : `
+                                <div class="flex flex-col items-center gap-2">
+                                    <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    </svg>
+                                    <span class="text-gray-600">${currentUrl ? 'Click to change image' : 'Click to upload image'}</span>
+                                    <span class="text-xs text-gray-500">${field.label}</span>
+                                </div>
+                            `}
+                        </div>
+                        <input 
+                            type="file" 
+                            id="file_${field.name}" 
+                            accept="${field.accept || 'image/*'}" 
+                            class="hidden" 
+                            onchange="handleFileSelect(event, '${field.name}')"
+                        />
+                        ${currentUrl ? `
+                            <div class="relative">
+                                <img src="${currentUrl}" alt="Preview" class="w-full max-w-xs rounded-lg border-2 border-gray-200" />
+                                ${uploadedUrl ? '<span class="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded">New</span>' : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            if (field.type === 'audio') {
+                return `
+                    <div class="space-y-3">
+                        <div class="file-upload ${currentUrl ? 'has-file' : ''}" onclick="document.getElementById('file_${field.name}').click()">
+                            ${isUploading ? `
+                                <div class="flex items-center justify-center gap-2">
+                                    <svg class="animate-spin h-5 w-5 text-purple-600" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                    </svg>
+                                    <span>Uploading...</span>
+                                </div>
+                            ` : `
+                                <div class="flex flex-col items-center gap-2">
+                                    <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                                    </svg>
+                                    <span class="text-gray-600">${currentUrl ? 'Click to change audio' : 'Click to upload audio'}</span>
+                                    <span class="text-xs text-gray-500">MP3, WAV, M4A</span>
+                                </div>
+                            `}
+                        </div>
+                        <input 
+                            type="file" 
+                            id="file_${field.name}" 
+                            accept="${field.accept || 'audio/*'}" 
+                            class="hidden" 
+                            onchange="handleFileSelect(event, '${field.name}')"
+                        />
+                        ${currentUrl ? `
+                            <div class="bg-gray-100 p-3 rounded-lg">
+                                <audio controls class="w-full">
+                                    <source src="${currentUrl}" type="audio/mpeg">
+                                    Your browser does not support the audio element.
+                                </audio>
+                                ${uploadedUrl ? '<p class="text-xs text-green-600 mt-2">✓ New audio uploaded</p>' : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            return `
+                <input 
+                    type="${field.type}" 
+                    name="${field.name}" 
+                    value="${value}" 
+                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-600 focus:outline-none" 
+                    ${field.required ? 'required' : ''}
+                    ${field.placeholder ? `placeholder="${field.placeholder}"` : ''}
+                />
+            `;
+        }
+
+        function renderDataManager() {
+            const platform = platforms[state.platform];
+            const colors = getColorClasses(platform.color);
+            const table = platform.sections[state.section];
+            const fields = formFields[table] || [];
+            const data = state.data[table] || [];
+
+            return `
+                <div class="min-h-screen bg-gray-50">
+                    ${renderNotification()}
+                    
+                    <nav class="bg-white shadow-sm border-b sticky top-0 z-40">
+                        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+                            <div class="flex items-center gap-4">
+                                <button onclick="goBack()" class="${colors.text} hover:opacity-80 flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                                    </svg>
+                                    Back
+                                </button>
+                                <div class="w-8 h-8 ${colors.gradient} rounded-lg"></div>
+                                <h1 class="text-2xl font-bold text-gray-800 capitalize">${state.section.replace('_', ' ')}</h1>
+                            </div>
+                            <button onclick="logout()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm">
+                                Logout
+                            </button>
+                        </div>
+                    </nav>
+                    
+                    <div class="max-w-7xl mx-auto px-6 py-8 space-y-8">
+                        <!-- Form -->
+                        <div id="form-section" class="bg-white rounded-xl shadow-lg p-8 slide-in">
+                            <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+                                ${state.editing ? `
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                    </svg>
+                                    Edit
+                                ` : `
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                    </svg>
+                                    Add New
+                                `}
+                                ${state.section.replace('_', ' ')}
+                            </h2>
+                            
+                            <form onsubmit="handleFormSubmit(event)">
+                                <div class="grid md:grid-cols-2 gap-6">
+                                    ${fields.map(field => `
+                                        <div class="${field.type === 'textarea' || field.type === 'file' || field.type === 'audio' ? 'md:col-span-2' : ''}">
+                                            <label class="block font-semibold text-gray-700 mb-2">
+                                                ${field.label}
+                                                ${field.required ? '<span class="text-red-500">*</span>' : ''}
+                                            </label>
+                                            ${renderField(field, state.editing?.[field.name] || '')}
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                
+                                <div class="flex gap-4 mt-8">
+                                    <button type="submit" class="${colors.bg} ${colors.hover} text-white px-8 py-3 rounded-lg font-semibold transition-colors">
+                                        ${state.editing ? 'Update' : 'Add'}
+                                    </button>
+                                    ${state.editing ? `
+                                        <button type="button" onclick="cancelEdit()" class="px-8 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors">
+                                            Cancel
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </form>
+                        </div>
+                        
+                        <!-- Data List -->
+                        <div class="bg-white rounded-xl shadow-lg p-8 slide-in">
+                            <h2 class="text-2xl font-bold mb-6">Existing Items (${data.length})</h2>
+                            
+                            ${data.length === 0 ? `
+                                <div class="text-center py-12 text-gray-500">
+                                    <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                                    </svg>
+                                    <p class="text-lg">No items yet. Add your first one above!</p>
+                                </div>
+                            ` : `
+                                <div class="space-y-4">
+                                    ${data.map(item => `
+                                        <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-gray-300 transition-all">
+                                            <div class="flex flex-col sm:flex-row justify-between gap-4">
+                                                <div class="flex-1 grid sm:grid-cols-2 gap-3">
+                                                    ${fields.slice(0, 4).map(field => `
+                                                        <div class="text-sm">
+                                                            <span class="font-semibold text-gray-700">${field.label}: </span>
+                                                            ${field.type === 'file' && item[field.name] ? `
+                                                                <img src="${item[field.name]}" alt="${field.label}" class="w-16 h-16 object-cover rounded-md mt-1 inline-block" />
+                                                            ` : field.type === 'checkbox' ? `
+                                                                <span class="text-gray-600">${item[field.name] ? 'Yes' : 'No'}</span>
+                                                            ` : `
+                                                                <span class="text-gray-600">${(item[field.name]?.toString() || 'N/A').substring(0, 50)}${(item[field.name]?.toString() || '').length > 50 ? '...' : ''}</span>
+                                                            `}
+                                                        </div>
+                                                    `).join('')}
+                                                </div>
+                                                <div class="flex gap-2 shrink-0">
+                                                    <button onclick='editItem(${JSON.stringify(item).replace(/'/g, "\\'")})' class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-2">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                                        </svg>
+                                                        Edit
+                                                    </button>
+                                                    <button onclick="deleteItem(${item.id})" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm flex items-center gap-2">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                                        </svg>
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function render() {
+            let html = '';
+
+            if (!state.isLoggedIn) {
+                html = renderLogin();
+            } else if (!state.platform) {
+                html = renderPlatformSelector();
+            } else if (!state.section) {
+                html = renderSectionSelector();
+            } else {
+                html = renderDataManager();
+            }
+
+            document.getElementById('app').innerHTML = html;
+        }
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>
